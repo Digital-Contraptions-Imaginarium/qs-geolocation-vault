@@ -44,6 +44,7 @@ var copyFromRawToVault = function (date, callback) {
     Logger.log("Checking for data for " + date + "...");
     openRawFileByDate(date, function (err, spreadsheet) {
         if (err) {
+            Logger.log("The data for " + date + " is not available. (" + err + ")");
             callback(err);
         } else {
             Logger.log("Importing data for " + date + "...");
@@ -70,6 +71,7 @@ function copyNewFromRawToVault () {
             movedDates = movedTimestamps ? movedTimestamps.map(function (d) { return new Date("" + d); }).sort() : null,
             latestMovedDate = movedDates ? _.last(movedDates) : null,
             fromDate = latestMovedDate ? new Date(latestMovedDate.valueOf() + 86400000) : _.first(availableDates);
+        Logger.log("Attempting importing from " + fromDate + " to " + yesterday + "...");
         async.eachSeries(_.range(fromDate.valueOf(), yesterday.valueOf() + 86400000, 86400000).map(function (d) { return new Date(d); }), copyFromRawToVault, function (err) { });  
     });
 }
