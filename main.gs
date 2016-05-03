@@ -1,6 +1,15 @@
 var RAW_GEOLOCATION_DATA_FOLDER_ID = "0B3i-XvikxKzAYzZlNnJXZUJiZVk",
     VAULT_SPREADSHEET_ID = "1uN9fOpGZae7w7y2RhrX4MmBRliWMM_1QT5tQK0Pa1oA";
 
+// returns true if the given utcDate falls during BST
+var isBST = function (utcDate) {
+    var dstStart = new Date(utcDate.getFullYear(), 2, 31, 2, 0, 0, 0),
+        dstEnd = new Date(utcDate.getFullYear(), 9, 30, 1, 0, 0, 0);
+    while (dstStart.getDay() !== 0) dstStart = new Date(dstStart.valueOf() - 86400000);
+    while (dstEnd.getDay() !== 0) dstEnd = new Date(dstEnd.valueOf() - 86400000);
+    return (dstStart <= utcDate) && (utcDate < dstEnd);
+}
+
 var dateToCSVDate = function (d) {
     // Note how I force the date to be stored as a string, to avoid Google
     // spreadsheet interpreting it and perhaps change its format when it is
@@ -50,9 +59,11 @@ var copyFromRawToVault = function (date, callback) {
                 knownTimestamps = _.flatten(targetSpreadsheet.getRange("R2C1:R" + Math.max(2, targetSpreadsheet.getLastRow()) + "C1").getValues()),
                 data = spreadsheet.getRange("R2C1:R" + Math.max(2, spreadsheet.getLastRow()) + "C" + spreadsheet.getLastColumn()).getValues();
             data = data.reduce(function (memo, row) {
-                // TODO: this is apparently UTC, not UK time, need to fix!
                 var timeStamp = row[0].match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/);
                 timeStamp = new Date(timeStamp[1], timeStamp[2] - 1, timeStamp[3], timeStamp[4], timeStamp[5], timeStamp[6]);
+                // Makes UTC to BST when applicable
+                // TODO: consider that this may create duplicate entries, as at the end of BST the hour between 1am and 2am happens twice!
+                if (isBST(timeStamp)) timeStamp = new Date(timeStamp.valueOf() + 3600000);
                 timeStamp = dateToCSVDate(timeStamp);
                 return _.contains(knownTimestamps, timeStamp) ? memo : memo.concat([[ timeStamp, JSON.stringify(_.object(fields, row)) ]]);
             }, [ ]);
@@ -76,4 +87,10 @@ function copyNewFromRawToVault () {
         Logger.log("Attempting importing from " + fromDate + " to " + today + "...");
         async.eachSeries(_.range(fromDate.valueOf(), today.valueOf() + 86400000, 86400000).map(function (d) { return new Date(d); }), copyFromRawToVault, function (err) { });  
     });
+}
+
+function test () {
+    var d = new Date(2016, 4, 4, 10, 45, 57);
+    // Logger.log(d.getDay());
+    Logger.log(isBST(d));
 }
