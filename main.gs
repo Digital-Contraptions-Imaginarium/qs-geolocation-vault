@@ -29,8 +29,6 @@ var openRawFileByDate = function (date, callback) {
         dayAfter = new Date(date.valueOf() + 86400000);
         filenameDayAfter = "" + dayAfter.getFullYear() + ("0" + (dayAfter.getMonth() + 1)).slice(-2) + ("0" + dayAfter.getDate()).slice(-2) + ".txt",
         rawGeolocationDataFolder = DriveApp.getFolderById(RAW_GEOLOCATION_DATA_FOLDER_ID);
-    // it is useful to import one day's file only when the following day's available, too
-    if (!rawGeolocationDataFolder.getFilesByName(filenameDayAfter).hasNext()) return callback(new Error("The raw data file does not exist or is not available yet."));
     // does the file actual exists?
     spreadsheet = rawGeolocationDataFolder.getFilesByName(filename);
     // note, it is presumed that filenames in the same folder are unique
@@ -49,15 +47,16 @@ var copyFromRawToVault = function (date, callback) {
         } else {
             Logger.log("Importing data for " + date + "...");
             var fields = _.flatten(spreadsheet.getRange("R1C1:R1C" + spreadsheet.getLastColumn()).getValues()),
+                knownTimestamps = _.flatten(targetSpreadsheet.getRange("R2C1:R" + Math.max(2, targetSpreadsheet.getLastRow()) + "C1").getValues()),
                 data = spreadsheet.getRange("R2C1:R" + Math.max(2, spreadsheet.getLastRow()) + "C" + spreadsheet.getLastColumn()).getValues();
-            Logger.log(fields);
-            data = data.map(function (row) {
+            data = data.reduce(function (memo, row) {
                 // TODO: this is apparently UTC, not UK time, need to fix!
-                var originalDate = row[0].match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/);
-                originalDate = new Date(originalDate[1], originalDate[2] - 1, originalDate[3], originalDate[4], originalDate[5], originalDate[6]);
-                return [ dateToCSVDate(originalDate), JSON.stringify(_.object(fields, row)) ];
-            });
-            targetSpreadsheet.getRange("R" + (targetSpreadsheet.getLastRow() + 1) + "C1:R" + (targetSpreadsheet.getLastRow() + data.length) + "C2").setValues(data);
+                var timeStamp = row[0].match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/);
+                timeStamp = new Date(timeStamp[1], timeStamp[2] - 1, timeStamp[3], timeStamp[4], timeStamp[5], timeStamp[6]);
+                timeStamp = dateToCSVDate(timeStamp);
+                return _.contains(knownTimestamps, timeStamp) ? memo : memo.concat([[ timeStamp, JSON.stringify(_.object(fields, row)) ]]);
+            }, [ ]);
+            if (data.length > 0) targetSpreadsheet.getRange("R" + (targetSpreadsheet.getLastRow() + 1) + "C1:R" + (targetSpreadsheet.getLastRow() + data.length) + "C2").setValues(data);
             callback(null);
         }
     });
@@ -66,12 +65,15 @@ var copyFromRawToVault = function (date, callback) {
 function copyNewFromRawToVault () {
     getAvailableRawFilesDates(function (err, availableDates) {
         var spreadsheet = SpreadsheetApp.openById(VAULT_SPREADSHEET_ID),
-            yesterday = new Date((new Date()).valueOf() - 86400000),
+            today = (new Date()).setHours(0, 0, 0, 0),
             movedTimestamps = spreadsheet.getLastRow() > 1 ? _.flatten(spreadsheet.getRange("R2C1:R" + spreadsheet.getLastRow() + "C1").getValues()) : null,
-            movedDates = movedTimestamps ? movedTimestamps.map(function (d) { return new Date("" + d); }).sort() : null,
+            movedDates = movedTimestamps ? _.uniq(movedTimestamps.map(function (ts) { 
+                var d = ts.match(/^(\d{4})-(\d{2})-(\d{2}) /);
+                return (new Date(d[1], d[2] - 1, d[3])).valueOf(); 
+            })).sort().map(function (v) { return new Date(v); }) : null,
             latestMovedDate = movedDates ? _.last(movedDates) : null,
-            fromDate = latestMovedDate ? new Date(latestMovedDate.valueOf() + 86400000) : _.first(availableDates);
-        Logger.log("Attempting importing from " + fromDate + " to " + yesterday + "...");
-        async.eachSeries(_.range(fromDate.valueOf(), yesterday.valueOf() + 86400000, 86400000).map(function (d) { return new Date(d); }), copyFromRawToVault, function (err) { });  
+            fromDate = latestMovedDate ? latestMovedDate : _.first(availableDates);
+        Logger.log("Attempting importing from " + fromDate + " to " + today + "...");
+        async.eachSeries(_.range(fromDate.valueOf(), today.valueOf() + 86400000, 86400000).map(function (d) { return new Date(d); }), copyFromRawToVault, function (err) { });  
     });
 }
