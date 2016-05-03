@@ -48,16 +48,16 @@ var copyFromRawToVault = function (date, callback) {
             callback(err);
         } else {
             Logger.log("Importing data for " + date + "...");
-            var data = spreadsheet.getRange("R2C1:R" + Math.max(2, spreadsheet.getLastRow()) + "C" + spreadsheet.getLastColumn()).getValues();
-            // convert the dates to CSV format
-            data = data.map(function (row) { 
+            var fields = _.flatten(spreadsheet.getRange("R1C1:R1C" + spreadsheet.getLastColumn()).getValues()),
+                data = spreadsheet.getRange("R2C1:R" + Math.max(2, spreadsheet.getLastRow()) + "C" + spreadsheet.getLastColumn()).getValues();
+            Logger.log(fields);
+            data = data.map(function (row) {
                 // TODO: this is apparently UTC, not UK time, need to fix!
                 var originalDate = row[0].match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/);
                 originalDate = new Date(originalDate[1], originalDate[2] - 1, originalDate[3], originalDate[4], originalDate[5], originalDate[6]);
-                row[0] = dateToCSVDate(originalDate); 
-                return row; 
+                return [ dateToCSVDate(originalDate), JSON.stringify(_.object(fields, row)) ];
             });
-            targetSpreadsheet.getRange("R" + (targetSpreadsheet.getLastRow() + 1) + "C1:R" + (targetSpreadsheet.getLastRow() + data.length) + "C" + data[0].length).setValues(data);
+            targetSpreadsheet.getRange("R" + (targetSpreadsheet.getLastRow() + 1) + "C1:R" + (targetSpreadsheet.getLastRow() + data.length) + "C2").setValues(data);
             callback(null);
         }
     });
